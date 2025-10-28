@@ -4,7 +4,9 @@ import cors from "cors"
 import dotenv from "dotenv"
 import authRoutes from "./routes/auth.js"
 import startupRoutes from "./routes/startups.js"
-
+import collaborationRoutes from "./routes/collaboration.js"
+import notificationRoutes from "./routes/notifications.js"
+import discussionRoutes from "./routes/discussions.js"
 dotenv.config()
 
 const app = express()
@@ -23,7 +25,9 @@ mongoose
 // Routes
 app.use("/api/auth", authRoutes)
 app.use("/api/startups", startupRoutes)
-
+app.use("/api/collaborations", collaborationRoutes)
+app.use("/api/notifications", notificationRoutes)
+app.use("/api/discussions", discussionRoutes)
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "Server is running" })

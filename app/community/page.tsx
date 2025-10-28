@@ -67,7 +67,7 @@ export default function CommunityPage() {
         {user && (
           <Link
             href="/community/new"
-            className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-colors"
+            className="px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary-light transition-colorspx-6 py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary-light transition-colors"
           >
             Start Discussion
           </Link>
@@ -80,11 +80,10 @@ export default function CommunityPage() {
           <button
             key={category}
             onClick={() => setSelectedCategory(category)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              selectedCategory === category
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedCategory === category
                 ? "bg-primary text-white"
                 : "bg-neutral-light text-foreground hover:bg-border"
-            }`}
+              }`}
           >
             {category.charAt(0).toUpperCase() + category.slice(1)}
           </button>

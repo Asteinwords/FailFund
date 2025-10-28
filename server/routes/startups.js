@@ -13,10 +13,28 @@ router.get("/", async (req, res) => {
     if (category) query.category = category
     if (status) query.status = status
     if (search) {
-      query.$or = [{ title: { $regex: search, $options: "i" } }, { description: { $regex: search, $options: "i" } }]
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+      ]
     }
 
-    const startups = await Startup.find(query).populate("founder", "name avatar").sort({ createdAt: -1 })
+    const startups = await Startup.find(query)
+      .populate("founder", "name avatar")
+      .sort({ createdAt: -1 })
+
+    res.json(startups)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Get startups created by the logged-in user
+router.get("/my", authenticateToken, async (req, res) => {
+  try {
+    const startups = await Startup.find({ founder: req.user.id })
+      .populate("founder", "name avatar")
+      .sort({ createdAt: -1 })
 
     res.json(startups)
   } catch (error) {
@@ -27,10 +45,11 @@ router.get("/", async (req, res) => {
 // Get single startup
 router.get("/:id", async (req, res) => {
   try {
-    const startup = await Startup.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } }, { new: true }).populate(
-      "founder",
-      "name avatar bio",
-    )
+    const startup = await Startup.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { views: 1 } },
+      { new: true }
+    ).populate("founder", "name avatar bio")
 
     if (!startup) {
       return res.status(404).json({ error: "Startup not found" })
@@ -45,8 +64,17 @@ router.get("/:id", async (req, res) => {
 // Create startup (authenticated)
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { title, description, failureReason, techStack, repositoryUrl, images, category, tags, buyoutPrice } =
-      req.body
+    const {
+      title,
+      description,
+      failureReason,
+      techStack,
+      repositoryUrl,
+      images,
+      category,
+      tags,
+      buyoutPrice,
+    } = req.body
 
     const startup = new Startup({
       title,

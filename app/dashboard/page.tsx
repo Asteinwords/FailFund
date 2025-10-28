@@ -4,6 +4,17 @@ import { useState, useEffect } from "react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useAuth } from "@/context/auth-context"
 import Link from "next/link"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 
 interface Startup {
   _id: string
@@ -15,109 +26,174 @@ interface Startup {
   createdAt: string
 }
 
+interface UserStats {
+  totalStartups: number
+  totalViews: number
+  activeCollaborations: number
+  averageRevivalScore: number
+}
+
 export default function DashboardPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState("overview")
   const [userStartups, setUserStartups] = useState<Startup[]>([])
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState({
+  const [editingStartup, setEditingStartup] = useState<Startup | null>(null)
+  const [stats, setStats] = useState<UserStats>({
     totalStartups: 0,
     totalViews: 0,
     activeCollaborations: 0,
     averageRevivalScore: 0,
   })
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        // Mock data - in production, fetch from API
-        const mockStartups: Startup[] = [
-          {
-            _id: "1",
-            title: "SocialFlow Analytics",
-            description: "Real-time social media analytics",
-            status: "available",
-            revivalScore: 78,
-            views: 234,
-            createdAt: new Date().toISOString(),
-          },
-          {
-            _id: "2",
-            title: "FitTrack AI",
-            description: "AI-powered fitness coaching",
-            status: "in-collaboration",
-            revivalScore: 85,
-            views: 456,
-            createdAt: new Date().toISOString(),
-          },
-        ]
+  // ✅ Fetch user startups & update stats
+  const fetchUserData = async () => {
+    if (!user) return
+    setLoading(true)
+    try {
+      const token = localStorage.getItem("failfund_token")
 
-        setUserStartups(mockStartups)
-        setStats({
-          totalStartups: mockStartups.length,
-          totalViews: mockStartups.reduce((sum, s) => sum + s.views, 0),
-          activeCollaborations: mockStartups.filter((s) => s.status === "in-collaboration").length,
-          averageRevivalScore: Math.round(
-            mockStartups.reduce((sum, s) => sum + s.revivalScore, 0) / mockStartups.length,
-          ),
-        })
-      } catch (error) {
-        console.error("Error fetching user data:", error)
-      } finally {
-        setLoading(false)
-      }
+      const res = await fetch("http://localhost:5000/api/startups/my", {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      })
+
+      if (!res.ok) throw new Error("Failed to fetch startups")
+      const data: Startup[] = await res.json() // Type assertion for safety
+
+      setUserStartups(data)
+      updateStats(data)
+    } catch (error) {
+      console.error("Error fetching user data:", error)
+    } finally {
+      setLoading(false)
     }
+  }
 
+  // ✅ Calculate and update stats
+  const updateStats = (data: Startup[]) => {
+    const totalStartups = data.length
+    const totalViews = data.reduce((sum, s) => sum + (s.views || 0), 0)
+    const activeCollaborations = data.filter((s) => s.status === "in-collaboration").length
+    const averageRevivalScore = data.length
+      ? Math.round(data.reduce((sum, s) => sum + (s.revivalScore || 0), 0) / data.length)
+      : 0
+
+    setStats({
+      totalStartups,
+      totalViews,
+      activeCollaborations,
+      averageRevivalScore,
+    })
+  }
+
+  // Effect to fetch data on component mount or user change
+  useEffect(() => {
     fetchUserData()
-  }, [])
+  }, [user])
+
+  // 🧾 Delete Startup
+  const handleDelete = async (id: string) => {
+    const confirmDelete = confirm("Are you sure you want to delete this startup?")
+    if (!confirmDelete) return
+    try {
+      const token = localStorage.getItem("failfund_token")
+      const res = await fetch(`http://localhost:5000/api/startups/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      })
+
+      if (!res.ok) throw new Error("Failed to delete startup")
+      // alert("Startup deleted successfully!") // UX: Comment out for cleaner UI experience
+
+      const updated = userStartups.filter((s) => s._id !== id)
+      setUserStartups(updated)
+      updateStats(updated)
+    } catch (error) {
+      console.error("Error deleting startup:", error)
+      alert("Failed to delete startup")
+    }
+  }
+
+  // ✏ Edit Startup Save
+  const handleEditSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editingStartup) return
+
+    // Refactor: Send only the updatable fields
+    const { _id, title, description } = editingStartup
+
+    try {
+      const token = localStorage.getItem("failfund_token")
+      const res = await fetch(`http://localhost:5000/api/startups/${_id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        // Send only the necessary fields
+        body: JSON.stringify({ title, description }),
+      })
+
+      if (!res.ok) throw new Error("Failed to update startup")
+
+      // alert("Startup updated successfully!") // UX: Comment out for cleaner UI experience
+      setEditingStartup(null)
+      fetchUserData() // Re-fetch to get the updated list
+    } catch (error) {
+      console.error("Error updating startup:", error)
+      alert("Failed to update startup")
+    }
+  }
 
   if (loading) {
     return (
       <ProtectedRoute>
-        <main className="max-w-6xl mx-auto py-12 px-4">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-foreground">Loading dashboard...</p>
-          </div>
+        <main className="max-w-6xl mx-auto py-12 px-4 text-center">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-foreground">Loading dashboard...</p>
         </main>
       </ProtectedRoute>
     )
   }
 
+  const handleInputChange = (field: keyof Startup, value: string) => {
+    setEditingStartup((prev) => {
+      if (prev) {
+        return { ...prev, [field]: value }
+      }
+      return null
+    })
+  }
+
+  // Helper for rendering empty state in tabs
+  const renderEmptyTab = (tabName: string, message: string) => (
+    <div className="text-center py-8">
+      <h2 className="text-2xl font-bold mb-4 text-neutral-dark">{tabName}</h2>
+      <p className="text-foreground mb-4">{message}</p>
+    </div>
+  )
+
   return (
     <ProtectedRoute>
       <main className="max-w-6xl mx-auto py-12 px-4">
+        {/* Header Section */}
         <div className="flex justify-between items-start mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-neutral-dark mb-2">Welcome back, {user?.name}!</h1>
+            <h1 className="text-4xl font-bold text-neutral-dark mb-2">
+              Welcome back, {user?.name || "User"}!
+            </h1>
             <p className="text-foreground">Manage your startups and collaborations</p>
           </div>
           <Link
             href="/upload"
-            className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-colors"
+            className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors shadow-sm"
           >
-            List New Startup
+            + List Your Startup
           </Link>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white border border-border rounded-lg p-6">
-            <p className="text-sm text-foreground mb-2">Total Startups</p>
-            <p className="text-3xl font-bold text-primary">{stats.totalStartups}</p>
-          </div>
-          <div className="bg-white border border-border rounded-lg p-6">
-            <p className="text-sm text-foreground mb-2">Total Views</p>
-            <p className="text-3xl font-bold text-primary">{stats.totalViews}</p>
-          </div>
-          <div className="bg-white border border-border rounded-lg p-6">
-            <p className="text-sm text-foreground mb-2">Active Collaborations</p>
-            <p className="text-3xl font-bold text-primary">{stats.activeCollaborations}</p>
-          </div>
-          <div className="bg-white border border-border rounded-lg p-6">
-            <p className="text-sm text-foreground mb-2">Avg Revival Score</p>
-            <p className="text-3xl font-bold text-primary">{stats.averageRevivalScore}%</p>
-          </div>
         </div>
 
         {/* Tabs */}
@@ -128,7 +204,9 @@ export default function DashboardPage() {
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`flex-1 px-6 py-4 font-medium transition-colors ${
-                  activeTab === tab ? "text-primary border-b-2 border-primary" : "text-foreground hover:text-primary"
+                  activeTab === tab
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-foreground hover:text-primary"
                 }`}
               >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -137,66 +215,81 @@ export default function DashboardPage() {
           </div>
 
           <div className="p-6">
+            {/* Overview Content (Moved Stats Grid here) */}
             {activeTab === "overview" && (
-              <div>
-                <h2 className="text-2xl font-bold mb-4 text-neutral-dark">Overview</h2>
-                <div className="space-y-4">
-                  <div className="p-4 bg-neutral-light rounded-lg">
-                    <h3 className="font-semibold text-neutral-dark mb-2">Your Profile</h3>
-                    <p className="text-foreground mb-2">Email: {user?.email}</p>
-                    <p className="text-foreground mb-2">Role: {user?.role}</p>
-                    <Link
-                      href="#profile"
-                      onClick={() => setActiveTab("profile")}
-                      className="text-primary hover:text-primary-light"
-                    >
-                      Edit Profile
-                    </Link>
+              <>
+                <h2 className="text-2xl font-bold mb-4 text-neutral-dark">Your Dashboard Overview</h2>
+                {/* Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-gray-50 border border-border rounded-lg p-6">
+                    <p className="text-sm text-foreground mb-2">Total Startups</p>
+                    <p className="text-3xl font-bold text-primary">{stats.totalStartups}</p>
+                  </div>
+                  <div className="bg-gray-50 border border-border rounded-lg p-6">
+                    <p className="text-sm text-foreground mb-2">Total Views</p>
+                    <p className="text-3xl font-bold text-primary">{stats.totalViews}</p>
+                  </div>
+                  <div className="bg-gray-50 border border-border rounded-lg p-6">
+                    <p className="text-sm text-foreground mb-2">Active Collaborations</p>
+                    <p className="text-3xl font-bold text-primary">{stats.activeCollaborations}</p>
+                  </div>
+                  <div className="bg-gray-50 border border-border rounded-lg p-6">
+                    <p className="text-sm text-foreground mb-2">Avg Revival Score</p>
+                    <p className="text-3xl font-bold text-primary">{stats.averageRevivalScore}%</p>
                   </div>
                 </div>
-              </div>
+              </>
             )}
 
+            {/* Startups Content */}
             {activeTab === "startups" && (
               <div>
-                <h2 className="text-2xl font-bold mb-4 text-neutral-dark">Your Startups</h2>
+                <h2 className="text-2xl font-bold mb-4 text-neutral-dark">Your Listed Startups</h2>
                 {userStartups.length > 0 ? (
                   <div className="space-y-4">
                     {userStartups.map((startup) => (
                       <div
                         key={startup._id}
-                        className="border border-border rounded-lg p-4 hover:shadow-md transition-shadow"
+                        className="border border-border rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <h3 className="text-lg font-semibold text-neutral-dark">{startup.title}</h3>
-                            <p className="text-sm text-foreground">{startup.description}</p>
+                            <p className="text-sm text-foreground line-clamp-1">{startup.description}</p>
                           </div>
                           <span
-                            className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${
                               startup.status === "available"
                                 ? "bg-green-100 text-green-700"
                                 : startup.status === "in-collaboration"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-gray-100 text-gray-700"
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-700"
                             }`}
                           >
-                            {startup.status}
+                            {startup.status.replace('-', ' ')}
                           </span>
                         </div>
                         <div className="flex gap-4 text-sm text-foreground mb-3">
                           <span>Views: {startup.views}</span>
                           <span>Revival Score: {startup.revivalScore}%</span>
                         </div>
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/startup/${startup._id}`}
-                            className="text-primary hover:text-primary-light font-medium"
-                          >
-                            View
+                        <div className="flex gap-3">
+                          {/* CORRECTED: Use JSX for template literal in Link href */}
+                          <Link href={`/startup/${startup._id}`} className="text-primary font-medium hover:underline">
+                            View Details
                           </Link>
-                          <button className="text-primary hover:text-primary-light font-medium">Edit</button>
-                          <button className="text-red-600 hover:text-red-700 font-medium">Delete</button>
+                          <button
+                            onClick={() => setEditingStartup(startup)}
+                            className="text-primary hover:text-primary/80 font-medium hover:underline"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(startup._id)}
+                            className="text-red-600 hover:text-red-700 font-medium hover:underline"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -204,66 +297,69 @@ export default function DashboardPage() {
                 ) : (
                   <div className="text-center py-8">
                     <p className="text-foreground mb-4">You haven't listed any startups yet.</p>
-                    <Link href="/upload" className="text-primary hover:text-primary-light font-semibold">
-                      List your first startup
+                    <Link
+                      href="/upload"
+                      className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors shadow-sm"
+                    >
+                      + List Your First Startup
                     </Link>
                   </div>
                 )}
               </div>
             )}
 
+            {/* Collaborations Content (Placeholder) */}
             {activeTab === "collaborations" && (
-              <div>
-                <h2 className="text-2xl font-bold mb-4 text-neutral-dark">Collaborations & Offers</h2>
-                <div className="text-center py-8">
-                  <p className="text-foreground mb-4">No active collaborations or offers yet.</p>
-                  <Link href="/browse" className="text-primary hover:text-primary-light font-semibold">
-                    Browse startups to collaborate
-                  </Link>
-                </div>
-              </div>
+              renderEmptyTab(
+                "Active Collaborations",
+                "You don't have any active collaboration requests or projects at the moment."
+              )
             )}
 
+            {/* Profile Content (Placeholder) */}
             {activeTab === "profile" && (
-              <div>
-                <h2 className="text-2xl font-bold mb-4 text-neutral-dark">Edit Profile</h2>
-                <form className="space-y-4 max-w-md">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Name</label>
-                    <input
-                      type="text"
-                      defaultValue={user?.name}
-                      className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Email</label>
-                    <input
-                      type="email"
-                      defaultValue={user?.email}
-                      disabled
-                      className="w-full px-4 py-2 border border-border rounded-lg bg-neutral-light"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Bio</label>
-                    <textarea
-                      rows={4}
-                      placeholder="Tell us about yourself..."
-                      className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="px-6 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-colors"
-                  >
-                    Save Changes
-                  </button>
-                </form>
-              </div>
+              renderEmptyTab(
+                "User Profile",
+                "Your profile settings and details will be available here."
+              )
             )}
           </div>
         </div>
+
+        {/* ✏ ShadCN Edit Dialog */}
+        <Dialog open={!!editingStartup} onOpenChange={() => setEditingStartup(null)}>
+          <DialogContent>
+            <form onSubmit={handleEditSubmit}>
+              <DialogHeader>
+                <DialogTitle>Edit Startup: {editingStartup?.title}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <Input
+                  type="text"
+                  value={editingStartup?.title || ""}
+                  onChange={(e) => handleInputChange("title", e.target.value)}
+                  placeholder="Title"
+                  required
+                />
+                <Textarea
+                  value={editingStartup?.description || ""}
+                  onChange={(e) => handleInputChange("description", e.target.value)}
+                  placeholder="Description"
+                  required
+                />
+                <div className="text-sm text-muted-foreground pt-2">
+                    Note: Status, Views, and Revival Score are not editable here.
+                </div>
+              </div>
+              <DialogFooter className="mt-6 flex justify-end gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit">Save Changes</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </main>
     </ProtectedRoute>
   )
